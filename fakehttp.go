@@ -9,13 +9,39 @@ import (
 	"strings"
 )
 
+// JSONHandler is a mock of an HTTP handler that sends and recieves JSON.
 type JSONHandler struct {
-	PathFmt       string
-	Method        string
-	RequestBody   interface{}
-	ResponseCode  int
-	ResponseFn    func(interface{}, []string, url.Values) (interface{}, error) `json:"-"`
-	ErrResponseFn func(http.ResponseWriter, error, int)                        `json:"-"`
+	// PathFmt is a pattern of URL paths to bind a handler to.
+	// See path.Match() for possible value patterns.  Skip the URL path check if
+	// it is an empty string.
+	PathFmt string
+	// Method is an HTTP request method.  Skip the HTTP method check if it is an
+	// empty string.
+	Method string
+	// RequestBody specifies the type to decode JSON of the HTTP request body.
+	RequestBody interface{}
+	// ResponseCode is an HTTP response code.
+	ResponseCode int
+	// ResponseFn is the function to return the response.
+	// The first argument is the decoded JSON of the HTTP request body to the
+	// value specified in RequestBody.
+	// The second argument is an element of the URL path that matches the pattern
+	// specified in PathFmt.  For example, If PathFmt is `/groups/*/users/*` and
+	// the URL path is `/groups/1/users/2`, then `[]string{"1", "2"}`.
+	// The third argument is a URL query parameter.
+	// The return value is JSON encoded, so it must be a value that can be
+	// specified as an argument to json.Marshal().
+	ResponseFn func(interface{}, []string, url.Values) (interface{}, error) `json:"-"`
+	// ErrResponseFn specifies how to return an error response.
+	// If nil is specified, a JSON response encoded from the following type is
+	// returned.
+	// ```
+	// type errorResponse struct {
+	//   Message string
+	//   Handler JSONHandler
+	// }
+	// ```
+	ErrResponseFn func(http.ResponseWriter, error, int) `json:"-"`
 }
 
 func (h JSONHandler) checkPath(reqPath string) ([]string, error) {
@@ -63,6 +89,7 @@ func (h JSONHandler) checkContentType(reqContentType string) error {
 	return nil
 }
 
+// ServeHTTP is a method to implement http.Handler.
 func (h JSONHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params, err := h.checkPath(r.URL.Path)
 	if err != nil {
