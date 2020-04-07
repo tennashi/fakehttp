@@ -2,6 +2,7 @@ package fakehttp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -155,4 +156,80 @@ func (h JSONHandler) errorResponse(w http.ResponseWriter, err error, statusCode 
 
 func defaultResponseFn(res interface{}, _ []string, _ url.Values) (interface{}, error) {
 	return res, nil
+}
+
+// MultipleHandler is an HTTP handler for handling multiple
+// fakehttp.JSONHandler.
+type MultipleHandler struct {
+	// ErrResponseFn specifies how to return an error response.
+	ErrResponseFn func(http.ResponseWriter, error, int)
+
+	handlers []JSONHandler
+}
+
+// NewMultipleHandler creates an instance of MultipleHandler.
+// The JSONHandler argument specifies that the Method and PathFmt fields must
+// not be empty strings.
+// Requests are matched in the order of the array.
+func NewMultipleHandler(hs []JSONHandler) *MultipleHandler {
+	handlers := make([]JSONHandler, 0, len(hs))
+	for _, h := range hs {
+		if h.Method != "" && h.PathFmt != "" {
+			handlers = append(handlers, h)
+		}
+	}
+	return &MultipleHandler{
+		handlers: handlers,
+	}
+}
+
+// AddHandler adds a JSONHandler to mock.
+// The JSONHandler argument specifies that the Method and PathFmt fields must
+// not be empty strings.
+func (h *MultipleHandler) AddHandler(handler JSONHandler) {
+	if handler.Method == "" || handler.PathFmt == "" {
+		return
+	}
+	if h.handlers == nil {
+		h.handlers = []JSONHandler{handler}
+		return
+	}
+	h.handlers = append(h.handlers, handler)
+}
+
+// ServeHTTP is a method to implement http.Handler.
+func (h MultipleHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, handler := range h.handlers {
+		if handler.Method == r.Method {
+			ok, err := path.Match(handler.PathFmt, r.URL.Path)
+			if err != nil {
+				h.errorResponse(w, err, http.StatusInternalServerError)
+			}
+			if ok {
+				handler.ServeHTTP(w, r)
+			}
+		}
+	}
+
+	h.errorResponse(w, errors.New("not found"), http.StatusNotFound)
+}
+
+func (h MultipleHandler) errorResponse(w http.ResponseWriter, err error, statusCode int) {
+	if h.ErrResponseFn != nil {
+		h.ErrResponseFn(w, err, statusCode)
+		return
+	}
+
+	if len(h.handlers) != 0 {
+		h.handlers[0].errorResponse(w, err, statusCode)
+	}
+
+	if err == nil {
+		w.WriteHeader(statusCode)
+		w.Write([]byte{})
+		return
+	}
+
+	w.WriteHeader(statusCode)
+	w.Write([]byte(err.Error()))
 }
