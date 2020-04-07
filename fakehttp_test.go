@@ -498,3 +498,204 @@ func TestJSONHandler_ServeHTTP_requestBody(t *testing.T) {
 		t.Fatalf("want %v, but got %v", testUser, got)
 	}
 }
+
+func TestNewMultipleHandler(t *testing.T) {
+	cases := []struct {
+		input []JSONHandler
+		want  *MultipleHandler
+	}{
+		{
+			input: []JSONHandler{
+				{Method: "GET", PathFmt: "/users/*"},
+				{Method: "PUT", PathFmt: "/users/*"},
+				{Method: "POST", PathFmt: "/users"},
+			},
+			want: &MultipleHandler{
+				handlers: []JSONHandler{
+					{Method: "GET", PathFmt: "/users/*"},
+					{Method: "PUT", PathFmt: "/users/*"},
+					{Method: "POST", PathFmt: "/users"},
+				},
+			},
+		},
+		{
+			input: []JSONHandler{
+				{Method: "GET", PathFmt: "/users/*"},
+				{Method: "GET", PathFmt: "/users/*"},
+				{Method: "POST", PathFmt: "/users"},
+			},
+			want: &MultipleHandler{
+				handlers: []JSONHandler{
+					{Method: "GET", PathFmt: "/users/*"},
+					{Method: "GET", PathFmt: "/users/*"},
+					{Method: "POST", PathFmt: "/users"},
+				},
+			},
+		},
+		{
+			input: []JSONHandler{
+				{Method: "", PathFmt: "/users/*"},
+			},
+			want: &MultipleHandler{
+				handlers: []JSONHandler{},
+			},
+		},
+		{
+			input: []JSONHandler{
+				{Method: "GET", PathFmt: ""},
+			},
+			want: &MultipleHandler{
+				handlers: []JSONHandler{},
+			},
+		},
+		{
+			input: []JSONHandler{
+				{Method: "", PathFmt: ""},
+			},
+			want: &MultipleHandler{
+				handlers: []JSONHandler{},
+			},
+		},
+		{
+			input: []JSONHandler{},
+			want: &MultipleHandler{
+				handlers: []JSONHandler{},
+			},
+		},
+		{
+			input: nil,
+			want: &MultipleHandler{
+				handlers: []JSONHandler{},
+			},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			got := NewMultipleHandler(tt.input)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("want %#v, but got: %#v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestMultipleHandler_AddHandler_nilHandlers(t *testing.T) {
+	cases := []struct {
+		input JSONHandler
+		want  MultipleHandler
+	}{
+		{
+			input: JSONHandler{Method: "GET", PathFmt: "/users/*"},
+			want: MultipleHandler{
+				handlers: []JSONHandler{
+					{Method: "GET", PathFmt: "/users/*"},
+				},
+			},
+		},
+		{
+			input: JSONHandler{Method: "", PathFmt: "/users/*"},
+			want:  MultipleHandler{},
+		},
+		{
+			input: JSONHandler{Method: "GET", PathFmt: ""},
+			want:  MultipleHandler{},
+		},
+		{
+			input: JSONHandler{Method: "", PathFmt: ""},
+			want:  MultipleHandler{},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			h := MultipleHandler{}
+			h.AddHandler(tt.input)
+			if !reflect.DeepEqual(h, tt.want) {
+				t.Fatalf("want %#v, but got: %#v", tt.want, h)
+			}
+		})
+	}
+}
+
+func TestMultipleHandler_ServeHTTP_matchHandler(t *testing.T) {
+	h := NewMultipleHandler([]JSONHandler{
+		{
+			Method:       "GET",
+			PathFmt:      "/users/*",
+			ResponseCode: 200,
+			ResponseFn: func(_ interface{}, pParams []string, _ url.Values) (interface{}, error) {
+				return map[string]interface{}{"called": pParams[0]}, nil
+			},
+		},
+		{
+			Method:       "GET",
+			PathFmt:      "/users/*",
+			ResponseCode: 200,
+			ResponseFn: func(_ interface{}, pParams []string, _ url.Values) (interface{}, error) {
+				return map[string]interface{}{"never_called": pParams[0]}, nil
+			},
+		},
+	})
+
+	req := httptest.NewRequest("GET", "http://localhost/users/1", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	res := w.Result()
+
+	if res.StatusCode != 200 {
+		t.Fatalf("want 200, but got %v", res.StatusCode)
+	}
+
+	var got map[string]interface{}
+	err := json.NewDecoder(res.Body).Decode(&got)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got["called"] != "1" {
+		t.Fatalf("want '1', but got %v", got["called"])
+	}
+}
+
+func TestMultipleHandler_ServeHTTP_unmatched(t *testing.T) {
+	cases := []struct {
+		method       string
+		path         string
+		responseCode int
+	}{
+		{
+			method:       "GET",
+			path:         "/hoge",
+			responseCode: 404,
+		},
+		{
+			method:       "POST",
+			path:         "/users/1",
+			responseCode: 404,
+		},
+	}
+
+	h := NewMultipleHandler([]JSONHandler{
+		{
+			Method:       "GET",
+			PathFmt:      "/users/*",
+			ResponseCode: 200,
+		},
+	})
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "http://localhost"+tt.path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			res := w.Result()
+
+			if res.StatusCode != tt.responseCode {
+				t.Fatalf("want %v, but got %v", tt.responseCode, res.StatusCode)
+			}
+		})
+	}
+}
