@@ -1,6 +1,6 @@
 # fakehttp
 [![GoDoc](https://godoc.org/github.com/tennashi/fakehttp?status.svg)](https://godoc.org/github.com/tennashi/fakehttp)
-![CI](https://github.com/tennashi/fakehttp/workflows/CI/badge.svg)
+[![CI](https://github.com/tennashi/fakehttp/workflows/CI/badge.svg)](https://github.com/tennashi/fakehttp/actions)
 
 Fake HTTP handler.
 
