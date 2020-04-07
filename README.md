@@ -25,8 +25,12 @@ type Client struct {
 	url string
 }
 
+func NewClient(url string) *Client {
+	return &Client{url}
+}
+
 func (c Client) GetUser(userID int) (*User, error) {
-	res, err := http.Get(c.url + "/users/" + strconv.Atoi(userID))
+	res, err := http.Get(c.url + "/users/" + strconv.Itoa(userID))
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +55,7 @@ import (
 	"strconv"
 	"testing"
 
+
 	"github.com/tennashi/fakehttp"
 
 	"example.com/yourapp/app" // import your application
@@ -66,11 +71,11 @@ var getHandler = fakehttp.JSONHandler{
 		pathParams []string, // URL path params
 		_ url.Values, // URL query params
 	) (interface{}, error) {
-		userID := strconv.Atoi(pathParams[0])
+		userID, _ := strconv.Atoi(pathParams[0])
 		return &app.User{
 			ID:   userID,
 			Name: "test-user-" + pathParams[0],
-		}
+		}, nil
 	},
 }
 
@@ -140,7 +145,11 @@ type Client struct {
 	url string
 }
 
-func (c Client) CreateUser(u User) (*User, error) {
+func NewClient(url string) *Client {
+	return &Client{url}
+}
+
+func (c *Client) CreateUser(u User) (*User, error) {
 	var b bytes.Buffer
 	json.NewEncoder(&b).Encode(u)
 	res, err := http.Post(c.url+"/users", "application/json", &b)
@@ -149,11 +158,11 @@ func (c Client) CreateUser(u User) (*User, error) {
 	}
 	defer res.Body.Close()
 
-	u := User{}
-	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
+	ret := User{}
+	if err := json.NewDecoder(res.Body).Decode(&ret); err != nil {
 		return nil, err
 	}
-	return &u, nil
+	return &ret, nil
 }
 ```
 
@@ -177,7 +186,7 @@ var postHandler = fakehttp.JSONHandler{
 	Method:       "POST",
 	PathFmt:      "/users",
 	ResponseCode: 200,
-	Request:      &app.User{}, // Specify the type of the request body.
+	RequestBody:  &app.User{}, // Specify the type of the request body.
 	ResponseFn: func(
 		req interface{}, // request body
 		_ []string, // URL path params
@@ -217,7 +226,7 @@ func TestCli_CreateUser(t *testing.T) {
 		},
 	}
 
-	ts := httptest.NewServer(getHandler)
+	ts := httptest.NewServer(postHandler)
 	defer ts.Close()
 
 	for _, tt := range cases {
